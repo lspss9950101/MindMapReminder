@@ -42,7 +42,8 @@ class MainPage extends StatefulWidget {
   _MainPageState createState() => _MainPageState();
 }
 
-class _MainPageState extends State<MainPage> {
+class _MainPageState extends State<MainPage>
+    with SingleTickerProviderStateMixin {
   static const double maxScale = 2.0;
   static const double minScale = 0.2;
   static const double backgroundInterval = 200;
@@ -51,8 +52,9 @@ class _MainPageState extends State<MainPage> {
     return dy < 0 ? 1 / (1 + rawScale) : 1 + rawScale;
   }
 
-  static const List<double> scaleRatioStops = [0.35, 0.63, 1.12, 2.0];
+  static const List<double> scaleRatioStops = [0.2, 0.35, 0.63, 1.12, 2.0];
 
+  // Mind Map Mechanism
   TwoLevelScaleOffset canvasScaleOffset = TwoLevelScaleOffset();
   NodeMap nodeMap = NodeMap();
 
@@ -60,9 +62,40 @@ class _MainPageState extends State<MainPage> {
   Offset _focalPointOnScale = Offset.zero;
   Offset? _positionOnDoubleTap = Offset.zero;
 
+  // Animation
+  late Animation<double> _animation;
+  late AnimationController _animationController;
+  late int _currentStop;
+
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+        duration: const Duration(milliseconds: 200), vsync: this);
+    _animation = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic))
+      ..addListener(() {
+        setState(() {
+          canvasScaleOffset.alignFocal(
+              _positionOnDoubleTap!,
+              _positionOnDoubleTap!,
+              pow(scaleRatioStops[_currentStop + 1] / canvasScaleOffset.scale1,
+                  _animation.value) as double);
+        });
+      })
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          setState(() {
+            canvasScaleOffset.apply();
+          });
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   @override
@@ -98,13 +131,17 @@ class _MainPageState extends State<MainPage> {
           ),
         ),
         onDoubleTap: () {
-          for (double stop in scaleRatioStops) {
-            if (canvasScaleOffset.overallScale < stop) {
+          for (int i = 0; i < scaleRatioStops.length; i++) {
+            if (canvasScaleOffset.overallScale < scaleRatioStops[i]) {
+              _currentStop = i - 1;
+              _animationController.forward(from: 0);
+              /*
               setState(() {
                 canvasScaleOffset.alignFocal(_positionOnDoubleTap!,
                     _positionOnDoubleTap!, stop / canvasScaleOffset.scale1);
                 canvasScaleOffset.apply();
               });
+              */
               break;
             }
           }
@@ -122,7 +159,8 @@ class _MainPageState extends State<MainPage> {
         onScaleUpdate: (ScaleUpdateDetails details) {
           setState(() {
             if (_scaleByDoubleTap) {
-              _positionOnDoubleTap = _positionOnDoubleTap ?? details.localFocalPoint;
+              _positionOnDoubleTap =
+                  _positionOnDoubleTap ?? details.localFocalPoint;
               final double newScale = max(
                   minScale / canvasScaleOffset.scale1,
                   min(
