@@ -23,6 +23,13 @@ class TwoLevelScaleOffset {
           offset2: other.offset2,
         );
 
+  void alignFocal(Offset oldFocal, Offset newFocal, double scale) {
+    final Offset oldWorldFocal = oldFocal / scale1 + offset1;
+    final Offset newWorldFocal = overallOffset + newFocal / scale1 / scale;
+    scale2 = scale;
+    offset2 -= (newWorldFocal - oldWorldFocal) * scale1;
+  }
+
   void apply() {
     offset1 = overallOffset;
     offset2 = Offset.zero;

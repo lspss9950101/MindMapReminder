@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:mind_map_reminder/main_scale_offset.dart';
 import 'package:mind_map_reminder/mesh_background.dart';
@@ -45,12 +46,19 @@ class _MainPageState extends State<MainPage> {
   static const double maxScale = 2.0;
   static const double minScale = 0.2;
   static const double backgroundInterval = 200;
-  static const double doubleTapScaleRatio = 0.004;
+  static double doubleTapMappingFunction(double dy) {
+    final double rawScale = 0.01 * dy.abs();
+    return dy < 0 ? 1 / (1 + rawScale) : 1 + rawScale;
+  }
+
+  static const List<double> scaleRatioStops = [0.35, 0.63, 1.12, 2.0];
 
   TwoLevelScaleOffset canvasScaleOffset = TwoLevelScaleOffset();
   NodeMap nodeMap = NodeMap();
 
+  bool _scaleByDoubleTap = false;
   Offset _focalPointOnScale = Offset.zero;
+  Offset? _positionOnDoubleTap = Offset.zero;
 
   @override
   void initState() {
@@ -62,14 +70,22 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          IconButton(onPressed: () {
-            Size screenSize = MediaQuery.of(context).size;
-            nodeMap.add(Node.dummy(pos: (Offset(screenSize.width, screenSize.height) / canvasScaleOffset.overallScale - const Offset(160, 76)) / 2 + canvasScaleOffset.overallOffset));
-          }, icon: const Icon(Icons.add)),
+          IconButton(
+              onPressed: () {
+                Size screenSize = MediaQuery.of(context).size;
+                nodeMap.add(Node.dummy(
+                    pos: (Offset(screenSize.width, screenSize.height) /
+                                    canvasScaleOffset.overallScale -
+                                const Offset(160, 76)) /
+                            2 +
+                        canvasScaleOffset.overallOffset));
+              },
+              icon: const Icon(Icons.add)),
         ],
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        dragStartBehavior: DragStartBehavior.down,
         child: MainScaleOffset(
           scaleOffset: canvasScaleOffset,
           child: Stack(
@@ -81,23 +97,51 @@ class _MainPageState extends State<MainPage> {
             ],
           ),
         ),
+        onDoubleTap: () {
+          for (double stop in scaleRatioStops) {
+            if (canvasScaleOffset.overallScale < stop) {
+              setState(() {
+                canvasScaleOffset.alignFocal(_positionOnDoubleTap!,
+                    _positionOnDoubleTap!, stop / canvasScaleOffset.scale1);
+                canvasScaleOffset.apply();
+              });
+              break;
+            }
+          }
+        },
+        onDoubleTapDown: (TapDownDetails details) {
+          _positionOnDoubleTap = details.localPosition;
+        },
+        onDoubleTapCancel: () {
+          _scaleByDoubleTap = true;
+          _positionOnDoubleTap = null;
+        },
         onScaleStart: (ScaleStartDetails details) {
-          _focalPointOnScale =
-              details.localFocalPoint / canvasScaleOffset.overallScale +
-                  canvasScaleOffset.overallOffset;
+          _focalPointOnScale = details.localFocalPoint;
         },
         onScaleUpdate: (ScaleUpdateDetails details) {
           setState(() {
-            Offset newFocalPoint = canvasScaleOffset.overallOffset;
-            canvasScaleOffset.scale2 = max(minScale / canvasScaleOffset.scale1,
-                min(maxScale / canvasScaleOffset.scale1, details.scale));
-            newFocalPoint +=
-                details.localFocalPoint / canvasScaleOffset.overallScale;
-            canvasScaleOffset.offset2 +=
-                (_focalPointOnScale - newFocalPoint) * canvasScaleOffset.scale1;
+            if (_scaleByDoubleTap) {
+              _positionOnDoubleTap = _positionOnDoubleTap ?? details.localFocalPoint;
+              final double newScale = max(
+                  minScale / canvasScaleOffset.scale1,
+                  min(
+                      maxScale / canvasScaleOffset.scale1,
+                      doubleTapMappingFunction(
+                          (details.localFocalPoint - _positionOnDoubleTap!)
+                              .dy)));
+              canvasScaleOffset.alignFocal(
+                  _focalPointOnScale, _focalPointOnScale, newScale);
+            } else {
+              final double newScale = max(minScale / canvasScaleOffset.scale1,
+                  min(maxScale / canvasScaleOffset.scale1, details.scale));
+              canvasScaleOffset.alignFocal(
+                  _focalPointOnScale, details.localFocalPoint, newScale);
+            }
           });
         },
         onScaleEnd: (ScaleEndDetails details) {
+          _scaleByDoubleTap = false;
           setState(() {
             canvasScaleOffset.apply();
           });
