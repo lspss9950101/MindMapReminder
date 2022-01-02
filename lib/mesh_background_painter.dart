@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'dart:core';
 
 class MeshBackgroundPainter extends CustomPainter {
-  final double interval;
+  late final double interval;
   final double scale;
 
-  MeshBackgroundPainter(this.interval, this.scale);
+  MeshBackgroundPainter({required double interval, required this.scale}) {
+    this.interval = interval * scale;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {

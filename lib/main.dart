@@ -1,9 +1,10 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'package:mind_map_reminder/main_scale_offset.dart';
 import 'package:mind_map_reminder/mesh_background.dart';
 import 'package:mind_map_reminder/mind_map.dart';
-import 'package:mind_map_reminder/node_preview.dart';
+
+import 'node.dart';
 
 void main() {
   runApp(const MainApp());
@@ -12,7 +13,6 @@ void main() {
 class MainApp extends StatelessWidget {
   const MainApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -29,7 +29,7 @@ class MainApp extends StatelessWidget {
         // is not restarted.
         primarySwatch: Colors.blue,
       ),
-      home: MainPage(),
+      home: const MainPage(),
     );
   }
 }
@@ -44,66 +44,63 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   static const double maxScale = 2.0;
   static const double minScale = 0.2;
-  Offset canvasOffset = Offset.zero;
-  double canvasScale = 1.0;
+  static const double backgroundInterval = 200;
+  static const double doubleTapScaleRatio = 0.004;
 
-  Offset _lastPanLocation = Offset.zero;
-  double _lastScale = 1.0;
+  TwoLevelScaleOffset canvasScaleOffset = TwoLevelScaleOffset();
+  NodeMap nodeMap = NodeMap();
 
-  final GlobalKey<MindMapState> mindMapKey = GlobalKey();
+  Offset _focalPointOnScale = Offset.zero;
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          IconButton(
-              onPressed: () {
-                mindMapKey.currentState?.addNode();
-              },
-              icon: const Icon(Icons.add)),
+          IconButton(onPressed: () {
+            Size screenSize = MediaQuery.of(context).size;
+            nodeMap.add(Node.dummy(pos: (Offset(screenSize.width, screenSize.height) / canvasScaleOffset.overallScale - const Offset(160, 76)) / 2 + canvasScaleOffset.overallOffset));
+          }, icon: const Icon(Icons.add)),
         ],
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        child: Stack(
-          children: [
-            MeshBackground(200, scale: canvasScale, offset: canvasOffset),
-            MindMap(
-              scale: canvasScale,
-              offset: canvasOffset,
-              key: mindMapKey,
-            ),
-          ],
+        child: MainScaleOffset(
+          scaleOffset: canvasScaleOffset,
+          child: Stack(
+            children: [
+              MeshBackground(
+                interval: backgroundInterval,
+              ),
+              MindMap(nodeMap: nodeMap),
+            ],
+          ),
         ),
         onScaleStart: (ScaleStartDetails details) {
-          _lastPanLocation = details.focalPoint;
+          _focalPointOnScale =
+              details.localFocalPoint / canvasScaleOffset.overallScale +
+                  canvasScaleOffset.overallOffset;
         },
         onScaleUpdate: (ScaleUpdateDetails details) {
-          if (details.pointerCount == 1) {
-            // Pan
-            setState(() {
-              canvasOffset -=
-                  (details.focalPoint - _lastPanLocation) / canvasScale;
-              _lastPanLocation = details.focalPoint;
-            });
-          } else if (details.pointerCount == 2) {
-            // Scale
-            setState(() {
-              double oldScale = canvasScale;
-              canvasScale = min(
-                  max(canvasScale * (details.scale / _lastScale), minScale),
-                  maxScale);
-              canvasOffset +=
-                  _lastPanLocation * (1 - oldScale / canvasScale) / oldScale;
-              _lastScale = details.scale;
-            });
-          }
+          setState(() {
+            Offset newFocalPoint = canvasScaleOffset.overallOffset;
+            canvasScaleOffset.scale2 = max(minScale / canvasScaleOffset.scale1,
+                min(maxScale / canvasScaleOffset.scale1, details.scale));
+            newFocalPoint +=
+                details.localFocalPoint / canvasScaleOffset.overallScale;
+            canvasScaleOffset.offset2 +=
+                (_focalPointOnScale - newFocalPoint) * canvasScaleOffset.scale1;
+          });
         },
         onScaleEnd: (ScaleEndDetails details) {
-          if (details.pointerCount == 1) {
-            _lastScale = 1.0;
-          }
+          setState(() {
+            canvasScaleOffset.apply();
+          });
         },
       ),
     );

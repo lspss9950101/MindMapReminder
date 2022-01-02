@@ -1,56 +1,96 @@
 import 'package:flutter/material.dart';
-import 'package:mind_map_reminder/node_preview.dart';
+import 'package:mind_map_reminder/main_scale_offset.dart';
+import 'package:mind_map_reminder/node.dart';
 
-class Pair {
-  dynamic first;
-  dynamic second;
-  Pair(this.first, this.second);
+typedef NodeListUpdateFunction = void Function();
+typedef NodeListAspect = UniqueKey;
+typedef NodeListOnModifiedFunction = void Function(NodeListAspect key);
+
+class NodeListModel extends InheritedModel<NodeListAspect> {
+  late final Map<UniqueKey, Node> _nodeMap;
+
+  NodeListModel(
+      {required Map<UniqueKey, Node> nodeMap, required Widget child, Key? key})
+      : super(child: child, key: key) {
+    _nodeMap = nodeMap;
+  }
+
+  static Node of(BuildContext context, NodeListAspect aspect) {
+    final NodeListModel? nodeList =
+        InheritedModel.inheritFrom<NodeListModel>(context, aspect: aspect);
+    final Node? node = nodeList?._nodeMap[aspect];
+    assert(nodeList != null, 'No MainScaleOffset found in context');
+    assert(node != null, 'Node not exist');
+    return node!;
+  }
+
+  @override
+  bool updateShouldNotify(NodeListModel oldWidget) =>
+      _nodeMap.length != oldWidget._nodeMap.length ||
+      _nodeMap.keys.any((key) => _nodeMap[key] != oldWidget._nodeMap[key]);
+
+  @override
+  bool updateShouldNotifyDependent(
+      NodeListModel oldWidget, Set<UniqueKey?> dependencies) {
+    bool ret = false;
+    for (UniqueKey? dependency in dependencies) {
+      if (dependency == null) {
+        ret |= updateShouldNotify(oldWidget);
+      } else {
+        ret |= oldWidget._nodeMap[dependency] != _nodeMap[dependency];
+      }
+    }
+    return ret;
+  }
 }
 
 class MindMap extends StatefulWidget {
-  final double scale;
-  final Offset offset;
+  final NodeMap nodeMap;
 
-  const MindMap({this.scale = 1.0, this.offset = Offset.zero, Key? key})
-      : super(key: key);
+  const MindMap({required this.nodeMap, Key? key}) : super(key: key);
 
   @override
   MindMapState createState() => MindMapState();
 }
 
 class MindMapState extends State<MindMap> {
-  final List<Node> nodes = [];
+  late final void Function() onNodeMapChanged;
 
-  void addNode() {
-    setState(() {
-      Size screenSize = MediaQuery.of(context).size;
-      nodes.add(Node.dummy((Offset(screenSize.width / 2, screenSize.height / 2) - const Offset(160, 76) * widget.scale / 2) / widget.scale + widget.offset));
-    });
+  @override
+  void initState() {
+    onNodeMapChanged = () {
+      setState(() {});
+    };
+    widget.nodeMap.addListener(onNodeMapChanged);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    widget.nodeMap.removeListener(onNodeMapChanged);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<NodePreview> nodePreviews = nodes
-        .asMap()
-        .entries
-        .map((e) => NodePreview(
-              e.value,
-              key: e.value.key,
-              scale: widget.scale,
-              offset: widget.offset,
-              onModified: (Offset pos) {
-                setState(() {
-                  nodes[e.key].lastModifyTime =
-                      DateTime.now().millisecondsSinceEpoch;
-                  nodes[e.key].pos = pos;
-                });
-              },
-            ))
-        .toList(growable: false);
-    nodePreviews
-        .sort((e1, e2) => (e1.data.lastModifyTime - e2.data.lastModifyTime));
-    return Stack(
-      children: [...nodePreviews],
+    return NodeListModel(
+      nodeMap: widget.nodeMap.nodes,
+      child: Builder(
+        builder: (BuildContext innerContext) {
+          MainScaleOffset mainScaleOffset =
+              MainScaleOffset.of(innerContext, MainScaleOffsetAspect.dynamic);
+          return Transform(
+            transform: Matrix4.identity()
+              ..scale(mainScaleOffset.dynamicScale)
+              ..translate(-mainScaleOffset.dynamicOffset.dx,
+                  -mainScaleOffset.dynamicOffset.dy),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: widget.nodeMap.widgets,
+            ),
+          );
+        },
+      ),
     );
   }
 }

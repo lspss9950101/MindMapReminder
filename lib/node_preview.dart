@@ -1,69 +1,34 @@
 import 'dart:math';
-import 'package:intl/intl.dart' as intl;
-
 import 'package:flutter/material.dart';
+import 'package:mind_map_reminder/main_scale_offset.dart';
+import 'package:mind_map_reminder/mind_map.dart';
+import 'package:mind_map_reminder/node.dart';
+import 'package:mind_map_reminder/styles.dart';
+import 'package:mind_map_reminder/utilities.dart';
 
-class Node {
+class _NodePreviewContent extends StatelessWidget {
+  final Size renderSize;
   final String title;
   final String description;
   final Color color;
-  final Key key = UniqueKey();
-
-  late int lastModifyTime;
-  Offset pos;
-
-  Node(this.title, this.description, this.color, this.pos) {
-    lastModifyTime = DateTime.now().millisecondsSinceEpoch;
-  }
-
-  Node.dummy([Offset pos=const Offset(100, 100)]) : this("Title", intl.DateFormat('yyyy/MM/dd').format(DateTime.now()), Colors.deepPurple, pos);
-}
-
-class NodePreview extends StatefulWidget {
-  final Node data;
-
-  final Offset offset;
   final double scale;
-  final double maxScale;
-  final Function? onModified;
 
-  const NodePreview(this.data,
-      {this.offset = Offset.zero,
-      this.scale = 1.0,
-      this.maxScale = 1,
-      this.onModified,
+  const _NodePreviewContent(
+      {required this.title,
+      required this.description,
+      required this.color,
+      required this.renderSize,
+      required this.scale,
       Key? key})
       : super(key: key);
 
-  NodePreview.dummy(
-      {Offset? pos, Offset offset = Offset.zero, double scale = 1.0, Key? key})
-      : this(Node.dummy(), offset: offset, scale: scale, key: key);
-
   @override
-  _NodePreviewState createState() => _NodePreviewState();
-}
-
-class _NodePreviewState extends State<NodePreview> {
-  static const TextStyle _titleStyle = TextStyle(
-    color: Colors.white,
-    fontSize: 24,
-    fontWeight: FontWeight.bold,
-  );
-  static const TextStyle _descStyle = TextStyle(
-    color: Colors.white,
-    fontSize: 14,
-  );
-
-  bool dragged = false;
-
-  Widget _contentPart(Size renderSize) {
+  Widget build(BuildContext context) {
     return Container(
       height: renderSize.height,
       width: renderSize.width,
-      transform: Matrix4.identity()
-        ..scale(min(widget.scale, widget.maxScale),
-            min(widget.scale, widget.maxScale), 1.0),
-      color: widget.data.color,
+      transform: Matrix4.identity()..scale(scale),
+      color: color,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -71,20 +36,17 @@ class _NodePreviewState extends State<NodePreview> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Container(
               alignment: Alignment.center,
-              width: _getTextSize(widget.data.title, _titleStyle, minWidth: 28)
-                  .width,
+              width: getTextSize(title, nodeTitleStyle, minWidth: 28).width,
               child: Text(
-                widget.data.title,
-                style: _titleStyle.apply(
-                  fontSizeFactor: 1,
-                ),
+                title,
+                style: nodeTitleStyle,
               ),
             ),
           ),
-          if (widget.data.description.isNotEmpty) ...[
+          if (description.isNotEmpty) ...[
             Container(
               width: 8,
-              height: double.infinity,
+              height: renderSize.height,
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.centerLeft,
@@ -99,10 +61,8 @@ class _NodePreviewState extends State<NodePreview> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Text(
-                widget.data.description,
-                style: _descStyle.apply(
-                  fontSizeFactor: 1,
-                ),
+                description,
+                style: nodeDescStyle,
               ),
             ),
           ]
@@ -110,8 +70,18 @@ class _NodePreviewState extends State<NodePreview> {
       ),
     );
   }
+}
 
-  Widget _shadowPart(Size renderSize) {
+class _NodePreviewShadow extends StatelessWidget {
+  final Size renderSize;
+  final double scale;
+
+  const _NodePreviewShadow(
+      {required this.renderSize, required this.scale, Key? key})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
     final Offset renderSizeOffset = Offset(renderSize.width, renderSize.height);
     final double shadowLength = renderSizeOffset.distance * 0.7;
     final double cos = renderSizeOffset.dx / renderSizeOffset.distance;
@@ -123,39 +93,62 @@ class _NodePreviewState extends State<NodePreview> {
 
     return Transform(
       transform: Matrix4.identity()
-        ..scale(min(widget.scale, widget.maxScale),
-            min(widget.scale, widget.maxScale), 1.0),
-      child: Transform(
-        transform: Matrix4.identity()
-          ..translate(0.0, renderSize.height)
-          ..rotateZ(-theta),
-        child: Container(
-          transform: Matrix4.skewX(pi/3-theta),
-          width: width,
-          height: height,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black12,
-                Colors.transparent,
-              ],
-            ),
+        ..scale(scale)
+        ..translate(0.0, renderSize.height)
+        ..rotateZ(-theta),
+      child: Container(
+        transform: Matrix4.skewX(pi / 3 - theta),
+        width: width,
+        height: height,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black12,
+              Colors.transparent,
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+class NodePreview extends StatefulWidget {
+  final UniqueKey nodeKey;
+
+  const NodePreview({required this.nodeKey, Key? key}) : super(key: key);
+
+  @override
+  _NodePreviewState createState() => _NodePreviewState();
+}
+
+class _NodePreviewState extends State<NodePreview> {
+  bool dragged = false;
 
   @override
   Widget build(BuildContext context) {
-    final Size renderSize = _getSelfSize();
-    Widget content = _contentPart(renderSize);
-    Widget shadow = _shadowPart(renderSize);
+    final Node node = NodeListModel.of(context, widget.nodeKey);
+    final MainScaleOffset mainScaleOffset =
+        MainScaleOffset.of(context, MainScaleOffsetAspect.static);
+
+    final Size renderSize = _getSelfSize(node);
+    final Widget content = _NodePreviewContent(
+      title: node.title,
+      description: node.description,
+      color: node.color,
+      renderSize: renderSize,
+      scale: mainScaleOffset.staticScale,
+    );
+    final Widget shadow = _NodePreviewShadow(
+        renderSize: renderSize, scale: mainScaleOffset.staticScale);
+
     return Positioned(
-      top: (widget.data.pos.dy - widget.offset.dy) * widget.scale,
-      left: (widget.data.pos.dx - widget.offset.dx) * widget.scale,
+      left: (node.pos.dx - mainScaleOffset.staticOffset.dx) *
+          mainScaleOffset.staticScale,
+      top: (node.pos.dy - mainScaleOffset.staticOffset.dy) *
+          mainScaleOffset.staticScale,
       child: Stack(
         children: [
           if (!dragged)
@@ -164,9 +157,17 @@ class _NodePreviewState extends State<NodePreview> {
               child: shadow,
             ),
           LongPressDraggable(
-            child: content,
+            child: Stack(
+              children: [
+                SizedBox(
+                  height: renderSize.height * mainScaleOffset.staticScale,
+                  width: renderSize.width * mainScaleOffset.staticScale,
+                ),
+                content,
+              ],
+            ),
             childWhenDragging: Opacity(
-              opacity: 0.5,
+              opacity: 0.35,
               child: content,
             ),
             feedback: Material(
@@ -174,6 +175,24 @@ class _NodePreviewState extends State<NodePreview> {
               child: Stack(
                 children: [
                   shadow,
+                  Transform(
+                    transform: Matrix4.identity()
+                      ..scale(mainScaleOffset.staticScale),
+                    child: Container(
+                      height: renderSize.height,
+                      width: renderSize.width,
+                      decoration: BoxDecoration(
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black38,
+                            offset: Offset(sqrt(3) * 2, 4),
+                            blurRadius: 4,
+                            spreadRadius: 0
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   content,
                 ],
               ),
@@ -187,8 +206,11 @@ class _NodePreviewState extends State<NodePreview> {
               setState(() {
                 dragged = false;
               });
-              widget.onModified
-                  ?.call((context.findRenderObject() as RenderBox).globalToLocal(details.offset) / widget.scale + widget.data.pos);
+              node.update(
+                  position: node.pos +
+                      (context.findRenderObject() as RenderBox)
+                              .globalToLocal(details.offset) /
+                          mainScaleOffset.overallScale);
             },
           ),
         ],
@@ -196,22 +218,12 @@ class _NodePreviewState extends State<NodePreview> {
     );
   }
 
-  static Size _getTextSize(String text, TextStyle style,
-      {double minWidth = 0.0, double maxWidth = double.infinity}) {
-    final TextPainter textPainter = TextPainter(
-        text: TextSpan(text: text, style: style),
-        maxLines: 1,
-        textDirection: TextDirection.ltr)
-      ..layout(minWidth: minWidth, maxWidth: maxWidth);
-    return textPainter.size;
-  }
-
-  Size _getSelfSize() {
+  Size _getSelfSize(Node node) {
     final Size titleSize =
-        _getTextSize(widget.data.title, _titleStyle, minWidth: 28);
-    final Size descSize = _getTextSize(widget.data.description, _descStyle);
+        getTextSize(node.title, nodeTitleStyle, minWidth: 28);
+    final Size descSize = getTextSize(node.description, nodeDescStyle);
 
-    if (widget.data.description.isNotEmpty) {
+    if (node.description.isNotEmpty) {
       return Size(8 + titleSize.width + 8 + 8 + descSize.width + 12,
           24 + max(titleSize.height, descSize.height) + 24);
     } else {

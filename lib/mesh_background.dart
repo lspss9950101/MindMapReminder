@@ -1,29 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:mind_map_reminder/main_scale_offset.dart';
 import 'package:mind_map_reminder/mesh_background_painter.dart';
 
 class MeshBackground extends StatelessWidget {
-  final double scale;
-  late final Offset offset;
-  late final double interval;
+  final double interval;
 
   static double _doubleMod(double a, double b) {
     return a - (a / b).floor() * b;
   }
 
-  MeshBackground(double interval, {this.scale=1.0, Offset offset = Offset.zero, Key? key})
-      : super(key: key) {
-    this.interval = interval * scale;
-    this.offset = Offset(
-        _doubleMod(offset.dx * scale, this.interval), _doubleMod(offset.dy * scale, this.interval));
-  }
+  MeshBackground({this.interval = 200, Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final MainScaleOffset mainScaleOffset =
+        MainScaleOffset.of(context, MainScaleOffsetAspect.all);
+    final Offset offset = Offset(
+        _doubleMod(mainScaleOffset.overallOffset.dx, interval),
+        _doubleMod(mainScaleOffset.overallOffset.dy, interval));
+    final double scale = mainScaleOffset.overallScale;
     return Positioned.fill(
       child: Transform(
-        transform: Matrix4.translationValues(-offset.dx, -offset.dy, 0.0),
+        transform: Matrix4.translationValues(
+            -offset.dx * scale, -offset.dy * scale, 0.0),
         child: CustomPaint(
-          painter: MeshBackgroundPainter(interval, scale),
+          painter: MeshBackgroundPainter(
+            interval: interval,
+            scale: scale,
+          ),
         ),
       ),
     );
